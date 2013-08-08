@@ -123,8 +123,6 @@ class Tracker(settings):
             if response.getcode() is not 200:
                 raise log.critical(self, 'Server response status: %s' % (response.getcode(),))
             else:
-#                print type(tostring(html.fromstring(response.read())).strip())
-#                print tostring(html.fromstring(response.read())).strip().encode('latin-1')
                 return tostring(html.fromstring(response.read())).strip()
         except Exception as e:
             log.error(self, 'Couldn\'t get server response: %s' % (e.message,))
