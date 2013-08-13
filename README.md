@@ -1,7 +1,7 @@
 Belpost tracker
 ===============
 
-Requires python 2.7
+Requires python version 2.7
 
 Script makes request to <b>Belarusian post tracking service</b> then parses response and sends sms via sms.ru service if parcel status gets changed.
 
