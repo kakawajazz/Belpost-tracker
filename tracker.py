@@ -59,10 +59,17 @@ class log(object):
         return socket.gethostname()
 
     @staticmethod
-    def sendLog(sender, message, level):
+    def sendLog(sender, message, level, loggerFilePath=settings.trackFolder + 'tracker.log'):
+        logging.basicConfig(filename=loggerFilePath,
+                            filemode='a',
+                            format='%(message)s',
+                            datefmt='%H:%M:%S',
+                            level=level)
+        logging.info(message)
         print datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S, %f'), sender.__class__.__name__, \
             {LogLevel.DEBUG: 'DEBUG', LogLevel.INFO: 'INFO', LogLevel.WARN: 'WARN', LogLevel.ERROR: 'ERROR',
              LogLevel.CRITICAL: 'CRITICAL', }[level], message
+
 
     @staticmethod
     def info(sender, message):
@@ -263,7 +270,7 @@ class Tracker(settings):
             log.error(self, 'Cannot open api-url: %s \n' % (e.message,))
 
     def success(self):
-        log.info(self, 'Processing complete successfully: %s \n' % (self.fullPath,))
+        log.debug(self, 'Processing complete successfully: %s \n' % (self.fullPath,))
 
 for item in settings.items:
     tracker = Tracker(item[0], item[1], item[2])
