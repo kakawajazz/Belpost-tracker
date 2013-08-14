@@ -12,6 +12,7 @@ from lxml import html, etree
 from lxml.etree import tostring
 from datetime import datetime
 from cStringIO import StringIO
+from math import ceil
 
 
 class SchemaBase(object):
@@ -47,6 +48,7 @@ class LogEntry(SchemaBase):
         self.sender = sender.__class__.__name__
         self.stamp = time.time()
 
+
     def __unicode__(self):
         return self.message
 
@@ -60,16 +62,17 @@ class log(object):
 
     @staticmethod
     def sendLog(sender, message, level, loggerFilePath=settings.trackFolder + 'tracker.log'):
+        print datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S, %f'), sender.__class__.__name__, \
+            {LogLevel.DEBUG: 'DEBUG', LogLevel.INFO: 'INFO', LogLevel.WARN: 'WARN', LogLevel.ERROR: 'ERROR',
+             LogLevel.CRITICAL: 'CRITICAL', }[level], message
+        date = datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S, %f ')
+        message = date + message
         logging.basicConfig(filename=loggerFilePath,
                             filemode='a',
                             format='%(message)s',
                             datefmt='%H:%M:%S',
                             level=level)
         logging.info(message)
-        print datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S, %f'), sender.__class__.__name__, \
-            {LogLevel.DEBUG: 'DEBUG', LogLevel.INFO: 'INFO', LogLevel.WARN: 'WARN', LogLevel.ERROR: 'ERROR',
-             LogLevel.CRITICAL: 'CRITICAL', }[level], message
-
 
     @staticmethod
     def info(sender, message):
@@ -104,6 +107,10 @@ class Tracker(settings):
     lastRecordedChangeTime = None
 
     def __init__(self, number, name, locality):
+        self.smsURL = None
+        self.trying = 1
+        self.successful = False
+        self.changed = None
         self.number = number
         self.name = name
         if locality == 'local':
@@ -118,18 +125,21 @@ class Tracker(settings):
         self.defineLastParsedChangeTime()
         self.alreadyRecorded = self.checkIfFileExist()
         self.checkEarlyRecord()
+        self.final()
 
     def defineFullPath(self):
-        log.info(self, 'Defining full path: %s' % (self.number))
+        log.info(self, 'Defining full path for %s' % (self.number))
         return self.trackFolder + self.number
 
     def defineResponse(self, apiURL):
-        log.info(self, 'Defining response: %s' % (self.fullPath))
+        log.info(self, 'Defining response for %s' % (self.number))
         try:
             response = urllib.urlopen(apiURL)
-            if response.getcode() is not 200:
-                raise log.critical(self, 'Server response status: %s' % (response.getcode(),))
+            self.responseCode = response.getcode()
+            if self.responseCode is not 200:
+                raise log.error(self, 'Server response status: %s' % (self.responseCode,))
             else:
+                log.info(self, 'Server status: %s' % self.responseCode)
                 return tostring(html.fromstring(response.read())).strip()
         except Exception as e:
             log.error(self, 'Couldn\'t get server response: %s' % (e.message,))
@@ -148,7 +158,7 @@ class Tracker(settings):
         return results
 
     def parseTable(self):
-        log.info(self, 'Parsing table: %s' % (self.fullPath))
+        log.info(self, 'Parsing table for %s' % (self.number,))
         try:
             if len(self.response):
                 tables = html.fromstring(self.response).xpath('//table')
@@ -171,6 +181,7 @@ class Tracker(settings):
                         .replace('</td><td class="theader">', '</th><th>').replace('<td class="theader">', '<th>')\
                         .replace('</td></tr>', '</th></tr>', 1)
                     parsedData1 = self.parser(table1)
+                    log.info(self, 'Getting second table of response.')
                     table2 = etree.parse(StringIO(self.defineResponse(self.apiURL.replace('&internal=2', '&internal=1'))), parser)
                     etree.strip_tags(table2, 'a')
                     table2 = tostring(table2.find('//table'))
@@ -187,7 +198,7 @@ class Tracker(settings):
             raise
 
     def defineLastParsedChangeTime(self):
-        log.info(self, 'Defining last parsed record time: %s' % (self.fullPath))
+        log.info(self, 'Defining last parsed record time for %s' % (self.number,))
         self.lastParsedChangeTime = json.loads(self.parsedData[-1])
         try:
             self.lastParsedChangeTime = time.mktime(datetime.strptime(self.lastParsedChangeTime[u'Дата'], '%Y-%m-%d %H:%M:%S').timetuple())
@@ -195,7 +206,7 @@ class Tracker(settings):
             self.lastParsedChangeTime = time.mktime(datetime.strptime(self.lastParsedChangeTime[u'Дата'], '%d.%m.%Y %H:%M:%S').timetuple())
 
     def checkIfFileExist(self):
-        log.info(self, 'Checking file existing: %s' % (self.fullPath))
+        log.info(self, 'Checking file existing: %s' % (self.fullPath,))
         try:
             with open(self.fullPath):
                 log.info(self, 'File already exist: %s' % (self.fullPath,))
@@ -205,7 +216,6 @@ class Tracker(settings):
             return False
 
     def checkEarlyRecord(self):
-        log.info(self, 'Checking early record: %s' % (self.fullPath))
         if self.alreadyRecorded:
             try:
                 log.info(self, 'Checking early recorded track: %s' % (self.fullPath,))
@@ -219,21 +229,72 @@ class Tracker(settings):
                 except:
                     self.lastRecordedChangeTime = time.mktime(datetime.strptime(self.lastRecordedChangeTime, '%d.%m.%Y %H:%M:%S').timetuple())
                 if self.lastRecordedChangeTime < self.lastParsedChangeTime:
-                    self.makeRecord()
-                    self.sendSms()
+                    self.changed = True
+                    self.composeAndSend()
                 elif self.lastRecordedChangeTime == self.lastParsedChangeTime:
+                    self.changed = False
+                    self.successful = True
                     log.info(self, 'Track didn\'t changed: %s' % (self.fullPath,))
-                    self.success()
             except:
-
                 log.error(self, 'Cannot open early recorded file and get last change data: %s' % (self.fullPath,))
         else:
-            self.makeRecord()
-            self.sendSms()
-            pass
+            self.composeAndSend()
+            self.changed = True
+
+    def composeAndSend(self):
+        try:
+            self.action = json.loads(self.parsedData[-1])[u'Событие'].encode('utf8')
+            try:
+                self.office = json.loads(self.parsedData[-1])[u'POST OFFICE'].encode('utf8')
+            except:
+                self.office = ''
+            self.message = self.name + ': ' + self.action + ' ' + self.office
+            log.debug(self, 'Message: %s' % self.message)
+            if len(self.message) > 70:
+                smsCount = int(ceil(float(len(self.message)) / 70))
+                for i in range(smsCount):
+                    message = self.message[(70 * i):(70 * (i + 1))]
+                    log.debug(self, 'Sms message: %s' % message)
+                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message)
+                    log.debug(self, 'Sms URL: %s' % self.smsUrl)
+                    self.sendSMS()
+                pass
+            else:
+                log.debug(self, 'Sms message: %s' % self.message)
+                self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(self.message)
+                log.debug(self, 'Sms URL: %s' % self.smsUrl)
+                self.sendSMS()
+            return True
+        except Exception as e:
+            log.error(self, 'Cannot compose SMS: %s' % e.message)
+
+    def sendSMS(self):
+        try:
+            self.response = urllib.urlopen(self.smsUrl)
+        except Exception as e:
+            log.error(self, 'Cannot open sms URL: %s' % e.message)
+        if self.response.getcode() is 200 and self.trying <= 3:
+            try:
+                self.responseBody = self.response.read() + '    '
+                if self.responseBody[:3] == '100':
+                    log.debug(self, 'Notification were sent')
+                    self.successful = True
+                else:
+                    log.debug(self, 'Something going wrong. Response report: %s' % self.responseBody)
+                    self.successful = False
+                    log.debug(self, 'Waiting for next trying...')
+                    time.sleep(60)
+                    log.debug(self, 'Trying to send again: "%s": %s' % (self.message, self.smsUrl))
+                    self.trying += 1
+                    self.sendSMS()
+            except Exception as e:
+                self.successful = False
+                log.error(self, 'Fail checkSuccess: %s' % e.message)
+        else:
+            log.error(self, 'Invalid Sms-URL: response status %s, response body: %s' % (self.response.getcode(), self.responseBody))
 
     def makeRecord(self):
-        log.info(self, 'Making record: %s' % (self.fullPath))
+        log.info(self, 'Making record: %s' % (self.fullPath,))
         try:
             os.makedirs(self.trackFolder)
             self.write()
@@ -244,33 +305,25 @@ class Tracker(settings):
                 raise
 
     def write(self):
-        log.info(self, 'Writing self: %s' % (self.fullPath))
+        log.info(self, 'Writing self: %s' % (self.fullPath,))
         try:
             f = open(self.fullPath, 'w+')
             for data in self.parsedData:
                 f.write(data + '\n')
+                log.debug(self, data)
             f.close()
             log.debug(self, 'Track has been written: %s' % (self.fullPath,))
         except Exception as e:
             log.error(self, 'Cannot write track %s: %s' % (self.fullPath, e.message))
 
-    def sendSms(self):
-        try:
-            action = json.loads(self.parsedData[-1])[u'Событие'].encode('utf8')
-            try:
-                office = json.loads(self.parsedData[-1])[u'POST OFFICE'].encode('utf8')
-            except:
-                office = ''
-            message = self.name + ': ' + action + ' ' + office
-            smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message)
-            urllib.urlopen(smsUrl)
-            log.debug(self, 'Notification were sent')
-            self.success()
-        except Exception as e:
-            log.error(self, 'Cannot open api-url: %s \n' % (e.message,))
-
-    def success(self):
-        log.debug(self, 'Processing complete successfully: %s \n' % (self.fullPath,))
+    def final(self):
+        if self.successful and self.changed:
+            self.makeRecord()
+            log.debug(self, 'Processing complete successfully: %s \n' % (self.fullPath,))
+        elif self.successful and not self.changed:
+            log.debug(self, 'Processing complete successfully: %s \n' % (self.fullPath,))
+        elif self.successful is False:
+            log.debug(self, 'Processing incomplete: %s \n' % (self.fullPath,))
 
 for item in settings.items:
     tracker = Tracker(item[0], item[1], item[2])
