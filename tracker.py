@@ -52,7 +52,7 @@ class LogEntry(SchemaBase):
 
 
 class log(object):
-    loggerRoutingKey = 'snipLog'
+    loggerRoutingKey = 'trackerLog'
 
     @staticmethod
     def __getLoggerHost():
