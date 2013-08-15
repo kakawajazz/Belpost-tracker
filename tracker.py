@@ -106,7 +106,7 @@ class Tracker(settings):
     lastParsedChangeTime = None
     lastRecordedChangeTime = None
 
-    def __init__(self, number, name, locality):
+    def __init__(self, number, name, locality, transformation):
         self.smsURL = None
         self.trying = 1
         self.successful = False
@@ -117,6 +117,7 @@ class Tracker(settings):
             self.locality = '1'
         else:
             self.locality = '2'
+        self.transformation = transformation
         self.apiURL = 'http://search.belpost.by/ajax/search?item=' + self.number + '&internal=' + self.locality
         log.info(self, 'Starting track processing: %s: %s' % (self.name, self.number))
         self.fullPath = self.defineFullPath()
@@ -252,7 +253,7 @@ class Tracker(settings):
                 self.office = ''
             self.message = self.name + ': ' + self.action + ' ' + self.office
             log.debug(self, 'Message: %s' % self.message)
-            if len(self.message) > 70:
+            if len(self.message) > 70 and self.transformation == 'split':
                 smsCount = int(ceil(float(len(self.message)) / 70))
                 for i in range(smsCount):
                     message = self.message[(70 * i):(70 * (i + 1))]
@@ -260,15 +261,36 @@ class Tracker(settings):
                     self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message.encode('utf8'))
                     log.debug(self, 'Sms URL: %s' % self.smsUrl)
                     self.sendSMS()
-                pass
+            elif len(self.message) > 70 and self.transformation == 'translit':
+                self.message = self.translit(self.message.encode('utf8'))
+                smsCount = int(ceil(float(len(self.message)) / 160))
+                for i in range(smsCount):
+                    message = self.message[(160 * i):(160 * (i + 1))]
+                    log.debug(self, 'Sms message: %s' % message)
+                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message.encode('utf8'))
+                    log.debug(self, 'Sms URL: %s' % self.smsUrl)
+                    self.sendSMS()
             else:
                 log.debug(self, 'Sms message: %s' % self.message)
                 self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(self.message.encode('utf8'))
                 log.debug(self, 'Sms URL: %s' % self.smsUrl)
                 self.sendSMS()
-            return True
+                return True
         except Exception as e:
             log.error(self, 'Cannot compose SMS: %s' % e.message)
+
+    def translit(self, message):
+        try:
+            symbols = {
+                'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'j','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'c','ч':'ch','ш':'sh','щ':'sch',"ъ":"'",'ы':'y','ь':"'",'э':'e','ю':'ju','я':'ja',
+                'А':'A','Б':'B','В':'V','Г':'G','Д':'D','Е':'E','Ё':'E','Ж':'ZH','З':'Z','И':'I','Й':'J','К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S','Т':'T','У':'U','Ф':'F','Х':'H','Ц':'C','Ч':'CH','Ш':'SH','Щ':'SCH','Ъ':"'",'Ы':'Y','Ь':"'",'Э':'E','Ю':'Ju','Я':'Ja'
+            }
+            for k in symbols.keys():
+                message = message.replace(k, symbols[k])
+            return message
+        except Exception as e:
+            log.error(self, 'Cannot translit message: %s' % (e.message,))
+            raise
 
     def sendSMS(self):
         try:
@@ -328,4 +350,4 @@ class Tracker(settings):
             log.debug(self, 'Processing incomplete: %s \n' % (self.fullPath,))
 
 for item in settings.items:
-    tracker = Tracker(item[0], item[1], item[2])
+    tracker = Tracker(item[0], item[1], item[2], item[3])

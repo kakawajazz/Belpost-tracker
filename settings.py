@@ -7,6 +7,10 @@ class settings(object):
     trackFolder = os.path.join(os.path.expanduser('~/www/python/sms/tracks/'))
 
     items = [
-        ['CJ420541567US', 'Longboard deck', 'international'],
+        ['CJ420541567US', 'Longboard deck', 'international', 'translit'],
         #['RQ154037942SG', 'Something', 'local'],
     ]
+    # 'CJ420541567US' - your tracking code
+    # 'Longboard deck' - something to just identify your item
+    # 'internatoinal' - type of shipping, must be 'international' or 'local'
+    # 'translit' - what to do if message is too long (more than 70 cyrillic symbols), must be 'translit' or 'split'
