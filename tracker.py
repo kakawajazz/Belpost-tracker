@@ -251,33 +251,34 @@ class Tracker(settings):
                 self.office = json.loads(self.parsedData[-1], encoding='UTF-8')[u'POST OFFICE']
             except:
                 self.office = ''
-            self.message = self.name + ': ' + self.action + ' ' + self.office
+            self.message = self.name.encode('utf8') + ': ' + self.action.encode('utf8') + ' ' + self.office.encode('utf8')
             log.debug(self, 'Message: %s' % self.message)
             if len(self.message) > 70 and self.transformation == 'split':
                 smsCount = int(ceil(float(len(self.message)) / 70))
                 for i in range(smsCount):
                     message = self.message[(70 * i):(70 * (i + 1))]
                     log.debug(self, 'Sms message: %s' % message)
-                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message.encode('utf8'))
+                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + message
                     log.debug(self, 'Sms URL: %s' % self.smsUrl)
                     self.sendSMS()
             elif len(self.message) > 70 and self.transformation == 'translit':
-                self.message = self.translit(self.message.encode('utf8'))
+                self.message = self.translit(self.message)
                 smsCount = int(ceil(float(len(self.message)) / 160))
                 for i in range(smsCount):
                     message = self.message[(160 * i):(160 * (i + 1))]
                     log.debug(self, 'Sms message: %s' % message)
-                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message.encode('utf8'))
+                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + message
                     log.debug(self, 'Sms URL: %s' % self.smsUrl)
                     self.sendSMS()
             else:
                 log.debug(self, 'Sms message: %s' % self.message)
-                self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(self.message.encode('utf8'))
+                self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + self.message
                 log.debug(self, 'Sms URL: %s' % self.smsUrl)
                 self.sendSMS()
                 return True
         except Exception as e:
             log.error(self, 'Cannot compose SMS: %s' % e.message)
+
 
     def translit(self, message):
         try:
