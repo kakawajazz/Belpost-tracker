@@ -154,7 +154,9 @@ class Tracker(settings):
             values = [col.text for col in row]
             data = dict(zip(headers, values))
             res = json.dumps(data, ensure_ascii=False)
+#            res = json.dumps(data)
             results.append(res.encode('latin-1'))
+#            results.append(res)
         return results
 
     def parseTable(self):
@@ -243,9 +245,9 @@ class Tracker(settings):
 
     def composeAndSend(self):
         try:
-            self.action = json.loads(self.parsedData[-1])[u'Событие'].encode('utf8')
+            self.action = json.loads(self.parsedData[-1], encoding='UTF-8')[u'Событие']
             try:
-                self.office = json.loads(self.parsedData[-1])[u'POST OFFICE'].encode('utf8')
+                self.office = json.loads(self.parsedData[-1], encoding='UTF-8')[u'POST OFFICE']
             except:
                 self.office = ''
             self.message = self.name + ': ' + self.action + ' ' + self.office
@@ -255,13 +257,13 @@ class Tracker(settings):
                 for i in range(smsCount):
                     message = self.message[(70 * i):(70 * (i + 1))]
                     log.debug(self, 'Sms message: %s' % message)
-                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message)
+                    self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(message.encode('utf8'))
                     log.debug(self, 'Sms URL: %s' % self.smsUrl)
                     self.sendSMS()
                 pass
             else:
                 log.debug(self, 'Sms message: %s' % self.message)
-                self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(self.message)
+                self.smsUrl = "http://sms.ru/sms/send?api_id=" + self.apiId + "&to=" + self.phoneNumber + "&text=" + urllib.quote(self.message.encode('utf8'))
                 log.debug(self, 'Sms URL: %s' % self.smsUrl)
                 self.sendSMS()
             return True
